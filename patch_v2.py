@@ -3,9 +3,16 @@ import struct
 from pathlib import Path
 import sys
 from dataclasses import dataclass
+import re
 
 # TODO backup file
 GAME_ASSEMBLY_DLL_PATH = "./GameAssembly.dll_bak"
+
+# TODO find other signatures
+GETMOVESPEED_SIGNATURE = "f3 0f 10 05 ?? ?? ?? ?? f3 0f 5e 81 a4"
+MOVESPEED_ORIGINAL_LITTLE_ENDIAN = b"8fc2753e"
+MOVESPEED_PATCH_LITTLE_ENDIAN = b"0ad7a33e"
+
 
 p = Path(GAME_ASSEMBLY_DLL_PATH)
 if not p.is_file():
@@ -69,4 +76,43 @@ def va_to_file_offset(va: int, pe_sections: list[PESection], image_base: int) ->
             return pe_section.pointer_to_raw_data + offset_within_section
 
     raise Exception(f"VA {va:#x} not found in file")
+
+def file_offset_to_va(file_offset: int, pe_sections: list[PESection], image_base: int) -> int:
+    # TODO
+    raise NotImplemented
+
+
+def find_pattern_file_offset(data: bytes, pattern: str) -> int:
+    tokens = pattern.split()
+    regex_pattern = b""
+    for token in tokens:
+        if token == "??":
+            regex_pattern += b"."
+        else:
+            regex_pattern += re.escape(bytes.fromhex(token))
+
+    compiled = re.compile(regex_pattern, re.DOTALL)
+    offsets = [match.start() for match in compiled.finditer(data) ]
+    if len(offsets) == 0:
+        raise ValueError(f"No matches for '{pattern}'")
+    elif len(offsets) > 1:
+        offsets_str = ", ".join(f"{offset:#x}" for offset in offsets)
+        raise ValueError(f"Found {len(offsets)} matches for '{pattern}' at offsets: {offsets_str}")
+
+    return offsets[0]
+
+
+# TODO parameterize this function
+def target_file_offset(data: bytes) -> int:
+    va = find_pattern_file_offset(data, GETMOVESPEED_SIGNATURE)
+    file_offset = va_to_file_offset(va, pe_sections, image_base)
+    rip_displacement = struct.unpack_from("<i", data, file_offset + 4)[0] # NOTE displacement operand is signed
+    rip = file_offset_to_va(file_offset, pe_sections, image_base) + 8
+
+    target_va = rip + rip_displacement
+    return va_to_file_offset(target_va, pe_sections, image_base)
+
+# TODO
+fo = target_file_offset(data)
+
 
