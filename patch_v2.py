@@ -9,9 +9,32 @@ import re
 GAME_ASSEMBLY_DLL_PATH = "./GameAssembly.dll_bak"
 
 # TODO find other signatures
+# this FieldPlayer.GetMoveSpeed function disassembles to something like (snippet from objdump output):
+#```
+#    180f00ac0:	f3 0f 10 05 ac 09 d5 00 	movss  xmm0,DWORD PTR [rip+0xd509ac]        # 0x181c51474
+#    180f00ac8:	f3 0f 5e 81 a4 00 00 00 	divss  xmm0,DWORD PTR [rcx+0xa4]
+#```
+# this is roughly "load 0.24 from .rdata, then divide 0.24 / entityMoveMagnification"
+#
+# we want to patch 0.24. this is referenced in a few other places (if we grep the disassembled code
+# for 0x181c51474 we get 3 hits). 0x181c51474 is in the .rdata section and will likely change in the
+# future if the game is updated.
+#
+# I'm assuming this code to get the player's move speed is stable and will not be changed unless the
+# devs update the movement speed logic, which I think is very unlikely. however, the rip
+# displacement is not stable and will probably move (alongside the VA of the constant we want to patch) if the game is updated.
+# so the idea is to use the bytes from the machine code to form a unique pattern to extract the rip
+# displacement. then, we can calculate the rip statically (VA of next instruction = instruction VA +
+# 8), add the displacement, and get the VA of the constant we want to patch. more precisely:
+#
+# 1. find file offset for instruction of our pattern
+# 2. rip displacement <- read bytes from file offset + 4 (signed little endian)
+# 3. rip <- (file offset + 8) converted to VA
+# 4. find VA of constant to patch by adding rip and rip displacement
+# 5. convert VA to file offset to get target to patch
 GETMOVESPEED_SIGNATURE = "f3 0f 10 05 ?? ?? ?? ?? f3 0f 5e 81 a4"
-MOVESPEED_ORIGINAL_LITTLE_ENDIAN = b"8fc2753e"
-MOVESPEED_PATCH_LITTLE_ENDIAN = b"0ad7a33e"
+MOVESPEED_ORIGINAL_LITTLE_ENDIAN = bytes.fromhex("8fc2753e") # 0.24 in IEEE 754 little endian
+MOVESPEED_PATCH_LITTLE_ENDIAN = bytes.fromhex("0ad7a33e") # 0.32 in IEEE 754 little endian
 
 
 p = Path(GAME_ASSEMBLY_DLL_PATH)
