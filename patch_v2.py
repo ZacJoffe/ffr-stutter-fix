@@ -94,11 +94,11 @@ def va_to_file_offset(va: int, pe_sections: list[PESection], image_base: int) ->
         if pe_section.virtual_address <= rva < pe_section.virtual_address + pe_section.virtual_size:
             offset_within_section = rva - pe_section.virtual_address
             if offset_within_section >= pe_section.size_of_raw_data:
-                raise Exception(f"VA {va:#x} matched to {pe_section.name} but out of file bounds")
+                raise ValueError(f"VA {va:#x} matched to {pe_section.name} but out of file bounds")
 
             return pe_section.pointer_to_raw_data + offset_within_section
 
-    raise Exception(f"VA {va:#x} not found in file")
+    raise ValueError(f"VA {va:#x} not found in file")
 
 def file_offset_to_va(file_offset: int, pe_sections: list[PESection], image_base: int) -> int:
     for pe_section in pe_sections:
