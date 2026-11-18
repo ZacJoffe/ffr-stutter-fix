@@ -136,13 +136,12 @@ def find_pattern_file_offset(data: bytes, pattern: str) -> int:
 
 
 # TODO parameterize this function
-def target_file_offset(data: bytes) -> int:
-    va = find_pattern_file_offset(data, GETMOVESPEED_SIGNATURE)
-    file_offset = va_to_file_offset(va, pe_sections, image_base)
+def target_file_offset(data: bytes, pe_sections: list[PESection], image_base: int) -> int:
+    file_offset = find_pattern_file_offset(data, GETMOVESPEED_SIGNATURE)
     rip_displacement = struct.unpack_from("<i", data, file_offset + 4)[0] # NOTE displacement operand is signed
-    rip = file_offset_to_va(file_offset, pe_sections, image_base) + 8
+    rip_va = file_offset_to_va(file_offset, pe_sections, image_base) + 8
 
-    target_va = rip + rip_displacement
+    target_va = rip_va + rip_displacement
     return va_to_file_offset(target_va, pe_sections, image_base)
 
 # TODO
