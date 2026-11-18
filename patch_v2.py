@@ -101,8 +101,18 @@ def va_to_file_offset(va: int, pe_sections: list[PESection], image_base: int) ->
     raise Exception(f"VA {va:#x} not found in file")
 
 def file_offset_to_va(file_offset: int, pe_sections: list[PESection], image_base: int) -> int:
-    # TODO
-    raise NotImplemented
+    for pe_section in pe_sections:
+        if pe_section.pointer_to_raw_data <= file_offset < pe_section.pointer_to_raw_data + pe_section.size_of_raw_data:
+            offset_within_section = file_offset - pe_section.pointer_to_raw_data
+            if offset_within_section >= pe_section.virtual_size:
+                raise ValueError(f"File offset {file_offset:#x} is padding at the end of {pe_section.name}, not loaded into memory")
+
+            rva = pe_section.virtual_address + offset_within_section
+            return rva + image_base
+
+    raise ValueError(f"File offset {file_offset:#x} is not inside any section")
+
+
 
 
 def find_pattern_file_offset(data: bytes, pattern: str) -> int:
