@@ -4,9 +4,11 @@ from pathlib import Path
 import sys
 from dataclasses import dataclass
 import re
+import os
 
-# TODO backup file
-GAME_ASSEMBLY_DLL_PATH = "./GameAssembly.dll_bak"
+GAME_ASSEMBLY_DLL_PATH = "./GameAssembly.dll"
+GAME_ASSEMBLY_DLL_PATH_BACKUP = "./GameAssembly.dll_bak"
+GAME_ASSEMBLY_DLL_TMP_PATH = "./GameAssembly.dll_tmp"
 
 # TODO find other signatures
 # this FieldPlayer.GetMoveSpeed function disassembles to something like (snippet from objdump output):
@@ -37,8 +39,8 @@ MOVESPEED_ORIGINAL_LITTLE_ENDIAN = bytes.fromhex("8fc2753e") # 0.24 in IEEE 754 
 MOVESPEED_PATCH_LITTLE_ENDIAN = bytes.fromhex("0ad7a33e") # 0.32 in IEEE 754 little endian
 
 
-p = Path(GAME_ASSEMBLY_DLL_PATH)
-if not p.is_file():
+dll_path = Path(GAME_ASSEMBLY_DLL_PATH)
+if not dll_path.is_file():
     print(f"Could not find file: {GAME_ASSEMBLY_DLL_PATH}")
     sys.exit(1)
 
@@ -112,9 +114,6 @@ def file_offset_to_va(file_offset: int, pe_sections: list[PESection], image_base
 
     raise ValueError(f"File offset {file_offset:#x} is not inside any section")
 
-
-
-
 def find_pattern_file_offset(data: bytes, pattern: str) -> int:
     tokens = pattern.split()
     regex_pattern = b""
@@ -136,7 +135,7 @@ def find_pattern_file_offset(data: bytes, pattern: str) -> int:
 
 
 # TODO parameterize this function
-def target_file_offset(data: bytes, pe_sections: list[PESection], image_base: int) -> int:
+def rip_target_file_offset(data: bytes, pe_sections: list[PESection], image_base: int) -> int:
     file_offset = find_pattern_file_offset(data, GETMOVESPEED_SIGNATURE)
     rip_displacement = struct.unpack_from("<i", data, file_offset + 4)[0] # NOTE displacement operand is signed
     rip_va = file_offset_to_va(file_offset, pe_sections, image_base) + 8
@@ -144,7 +143,30 @@ def target_file_offset(data: bytes, pe_sections: list[PESection], image_base: in
     target_va = rip_va + rip_displacement
     return va_to_file_offset(target_va, pe_sections, image_base)
 
-# TODO
-fo = target_file_offset(data)
+patched_data = bytearray(data)
+fo = rip_target_file_offset(data, pe_sections, image_base)
+current = bytes(patched_data[fo:fo+4])
+if current == MOVESPEED_PATCH_LITTLE_ENDIAN:
+    print("Move speed patched, continuing...")
+elif current != MOVESPEED_ORIGINAL_LITTLE_ENDIAN:
+    raise ValueError(f"Unexpected bytes at {fo:#x}: {current.hex(' ')}")
+
+patched_data[fo:fo+4] = MOVESPEED_PATCH_LITTLE_ENDIAN
+
+# TODO other patches
+
+
+backup = Path(GAME_ASSEMBLY_DLL_PATH_BACKUP)
+if not backup.exists():
+    shutil.copy2(GAME_ASSEMBLY_DLL_PATH, GAME_ASSEMBLY_DLL_PATH_BACKUP)
+
+tmp = Path(GAME_ASSEMBLY_DLL_TMP_PATH)
+try:
+    tmp.write_bytes(patched_data)
+    os.replace(tmp, dll_path)
+except OSError as e:
+    tmp.unlink(missing_ok=True)
+    print(f"Unable to write file, exiting without patching. Error: {e}")
+    sys.exit(1)
 
 
